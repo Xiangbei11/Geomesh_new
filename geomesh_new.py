@@ -205,9 +205,9 @@ class Geomesh(object):
             points2 = vedo.Points(projected_plot, r= 8, c='blue')
             #points3 = vedo.Points(projecting_plot, r= 8, c='pink')
             points4 = vedo.Points(projected_plot_ori, r= 10, c='red')
-            plot2.show('Original OML + projection', mesh_plot_ori, points2, points4, axes=1, interactive = True)  
+            plot2.show('Original OML + projection', mesh_plot_ori, points2, points4, axes=1, interactive = False)  
 
-    def create_projection_members(self):
+    def create_projection_members(self, plot = False):
         for i in range(self.num_members):
             ids = self.members[i].options['projected_point_ids'][0]
             _, indices = np.unique(ids,return_index=True)
@@ -219,6 +219,8 @@ class Geomesh(object):
             self.members[i].options['projected_point_ids'][1] = ids[np.sort(indices)]
             # revrese l2
             l2 = self.members[i].options['projected_point_ids'][1][::-1]
+
+            
 
 
 
