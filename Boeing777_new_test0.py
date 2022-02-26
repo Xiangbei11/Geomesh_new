@@ -21,8 +21,8 @@ x_leading_root = 29.6
 x_leading_tip = 47.6
 y_leading_root = 4.
 y_leading_tip = 33.
-z1 = 5.
-z2 = -5.
+z1 = 30.
+z2 = -30.
 point_start_upper = np.array([x_leading_root,y_leading_root,z1])
 point_end_upper = np.array([x_leading_tip,y_leading_tip,z1])
 point_start_lower = np.array([x_leading_root,y_leading_root,z2])
@@ -70,6 +70,8 @@ for x_start, x_end, y in zip(x_start_list, x_end_list, y_list):
         projection_direction = projection_direction,
         ))
     num_ribs += 1
+    if num_ribs ==1:
+        break
 
 # ---- Projection ----
 start = time.time()

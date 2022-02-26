@@ -174,7 +174,7 @@ class Geomesh(object):
                 print('--------')
                 for j in range(2):
                     projection_pts = projection_points[j,:,:]
-                    projection_dirts = projection_points[j,:,:] + projection_direction[j,:,:]                    
+                    projection_dirts = projection_points[j,:,:] + projection_direction[j,:,:]                  
                     reconnection= self.tree.ProjectandReconnect(projection_pts.astype(np.float32),projection_dirts.astype(np.float32)) 
                     self.pointCoords = reconnection.vertlist
                     self.connectivity = reconnection.trilist.astype(np.int32)
@@ -184,7 +184,9 @@ class Geomesh(object):
                     
                     if plot:
                         _, proj_p= tree_plot_ori.ProjectPoints(projection_pts.astype(np.float32),projection_dirts.astype(np.float32))
-                        projected_plot = np.concatenate((projected_plot,proj_p))   
+                        projected_plot = np.concatenate((projected_plot,proj_p))
+                        # print('proj_p',len(proj_p)) 
+                        # print(np.array(proj_p)) 
                         projecting_plot = np.concatenate((projecting_plot, projection_pts))  
                         for k in reconnection.projlist:
                             projected_plot_ori = np.concatenate((projected_plot_ori,self.pointCoords[k,:].reshape((1,3))))
@@ -203,9 +205,9 @@ class Geomesh(object):
             plot.show('Updated OML + projection', mesh, points1, axes=1, interactive = False)            
             plot2 = vedo.Plotter()
             points2 = vedo.Points(projected_plot, r= 8, c='blue')
-            #points3 = vedo.Points(projecting_plot, r= 8, c='pink')
+            points3 = vedo.Points(projecting_plot, r= 8, c='pink')
             points4 = vedo.Points(projected_plot_ori, r= 10, c='red')
-            plot2.show('Original OML + projection', mesh_plot_ori, points2, points4, axes=1, interactive = False)  
+            plot2.show('Original OML + projection', mesh_plot_ori, points2, points3, points4, axes=1, interactive = False)  
 
     def create_projection_members(self, plot = False):
         for i in range(self.num_members):

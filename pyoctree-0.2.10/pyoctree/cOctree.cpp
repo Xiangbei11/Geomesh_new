@@ -2218,7 +2218,7 @@ vector<Intersection>  cOctree::ProjectPoints(cOctNode &node, vector<vector<doubl
         proj = findmindists(node,projpoints);
         cout<<"findmindists(node,projpoints);"<<'\n';
     }else{
-        // // cout<<projpoints[index-1][0]<<" "<<projpoints[index-1][1]<<" "<<projpoints[index-1][2]<<'\n';
+        cout<<"Starttttttt "<<'\n';
         // // cout<<projdirts[index-1][0]<<" "<<projdirts[index-1][1]<<" "<<projdirts[index-1][2]<<'\n';
         // // cout<<projpoints[index-2][0]<<" "<<projpoints[index-2][1]<<" "<<projpoints[index-2][2]<<'\n';
         // // cout<<projdirts[index-2][0]<<" "<<projdirts[index-2][1]<<" "<<projdirts[index-2][2]<<'\n';
@@ -2228,6 +2228,8 @@ vector<Intersection>  cOctree::ProjectPoints(cOctNode &node, vector<vector<doubl
         // // 48.9112 32.8645 4/-
         vector<cLine> raylist;
         for (i=0;i<projdirts.size();i++){
+            cout<<projpoints[i][0]<<" "<<projpoints[i][1]<<" "<<projpoints[i][2]<<'\n';
+            cout<<projdirts[i][0]<<" "<<projdirts[i][1]<<" "<<projdirts[i][2]<<'\n';
             cLine ray(projpoints[i],projdirts[i],0);
             raylist.push_back(ray);
         } 
