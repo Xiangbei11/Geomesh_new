@@ -1783,6 +1783,543 @@ Reconnection cOctree::reconnect(cOctNode &node, vector<vector<double> > projpoin
     Reconnection reconnection(vertlist,trilist,projlist);
     return reconnection;
 }
+
+//----------------------------------------------------------------------------------------------------
+vector<Intersection> cOctree::findRayIntersects(vector<cLine> &rayList)
+{
+    // For each ray provided, determines if ray hits a poly in the tree and 
+    // returns a boolean integer. Uses openmp to speed up the calculation
+    // Function findRayIntersectsSorted is a similar function that sorts the
+    // triangles in order of closest octNodes. For ray casting, this alternative
+    // function should be faster in most cases
+    
+    int numRays = (int)(rayList.size());
+    vector<Intersection> intersections;
+    #pragma omp parallel for
+    
+    // cout<<"findRayIntersects(raylist)2"<<'\n';  
+    // cLine ray2 = rayList[numRays-2];
+    // vector<double> p0_2 = ray2.p0;
+    // cout <<p0_2[0]<<" "<<p0_2[1]<<" "<<p0_2[2]<<'\n';
+
+    for (int i=0; i<numRays; i++) 
+    {
+        cLine *ray = &rayList[i]; 
+        //set<int> polyListCheck = getListPolysToCheck(*ray);
+        vector<Intersection> intersection = findRayIntersect(*ray);
+        intersections.push_back(intersection[0]);
+    }
+    return intersections;
+}
+
+vector<Intersection> cOctree::findRayIntersect(cLine &ray)
+{  
+    // Get polys to check
+    set<int> polyListCheck = getListPolysToCheck(ray);
+    
+    // Loop through all polys in check list to find a possible intersection
+    vector<Intersection> intersectList;
+    set<int>::iterator it;
+    vector<double> ip;
+    double s;
+    for (it=polyListCheck.begin(); it!=polyListCheck.end(); ++it) {
+        int polyLabel = *it;
+        if (polyList[polyLabel].rayPlaneIntersectPoint(ray,ip,s)) {
+            intersectList.push_back(Intersection(polyLabel,ip,s)); } 
+    }
+            // // cout<<projpoints[index-1][0]<<" "<<projpoints[index-1][1]<<" "<<projpoints[index-1][2]<<'\n';
+        // // cout<<projdirts[index-1][0]<<" "<<projdirts[index-1][1]<<" "<<projdirts[index-1][2]<<'\n';
+        // // cout<<projpoints[index-2][0]<<" "<<projpoints[index-2][1]<<" "<<projpoints[index-2][2]<<'\n';
+        // // cout<<projdirts[index-2][0]<<" "<<projdirts[index-2][1]<<" "<<projdirts[index-2][2]<<'\n';
+    if (intersectList.size()>0){
+        // Sort list in terms of distance of the intersection from the ray origin
+        sort(intersectList.begin(),intersectList.end());
+        vector<Intersection> minintersect;
+        // minintersect[0]=intersectList[0];
+        minintersect.assign(intersectList.begin(),intersectList.begin()+1);
+        // return intersectList;
+        return minintersect;
+    }else{
+        Intersection mini;
+        mini=findRaymindist(ray);
+        vector<Intersection> minintersect;
+        minintersect.push_back(mini);
+        return minintersect;
+    }
+}
+
+Intersection cOctree::findRaymindist(cLine &ray)
+{
+    // double distance = 1e99;
+    double distanceij = 1e99;
+    double area2;
+    double h;
+    vector<double> x1, x2, x0, x0x1, x0x2, x2x1, cross, PP;
+    int k;
+    for (unsigned int i=0;i!=polyList.size();i++){
+        for (unsigned int j=0;j<3;j++){
+            x1.assign(ray.p0.begin(),ray.p0.end());
+            x2.assign(ray.p1.begin(),ray.p1.end());
+            x0.assign(polyList[i].vertices[j].begin(),polyList[i].vertices[j].end());
+            x0x1=vectSubtract(x0,x1);
+            x0x2=vectSubtract(x0,x2);
+            cross=crossProduct(x0x1,x0x2);
+            area2=sqrt(dotProduct(cross,cross));
+            x2x1=vectSubtract(x2,x1);
+            h=area2/sqrt(dotProduct(x2x1,x2x1));
+            if (distanceij>h){
+                PP.assign(x0.begin(),x0.end());
+                distanceij=h;    
+                k=i;
+            }
+        }
+    }
+    Intersection intersect(k,PP,distanceij);
+    return intersect;
+}
+
+
+
+
+
+// ------------------------------------------------------
+double vectNorm(vector<double> &a)
+{
+    double norm = sqrt(dotProduct(a,a));
+    return norm;
+}
+
+vector<double> normalize(vector<double> &v)
+{   double sum=0.0;
+    for (unsigned int i=0;i<3;i++){
+        sum+=v[i]*v[i];
+    }
+    sum=sqrt(sum);
+    vector<double> norm(3);
+    for (unsigned int i=0;i<3;i++){
+        norm[i]=v[i]/sum;
+    }
+    return norm;
+}
+
+vector<double> vectMuldou( vector<double> &a, double sf)
+{
+    vector<double> c(a.size());
+    for (unsigned int i=0; i<a.size(); i++)
+        c[i] = a[i]*sf;
+    return c;
+}
+
+
+vector<vector<double> > vectMultiply(vector<vector<double> > m1, vector<vector<double> > m2)
+{
+    vector<vector<double> > res(m1.size(),vector<double>(m2[0].size(),0.0));
+    for (unsigned int i=0;i<m1.size();i++){
+        for (unsigned int j=0;j<m2[0].size();j++){
+            for (unsigned int k=0;k<m2.size();k++){
+                res[i][j] += m1[i][k]*m2[k][j];
+            }
+        }
+    }
+    return res;
+}
+
+vector<vector<double> > vectInverse(vector<vector<double> > &m)
+{
+    double det = m[0][0]*m[1][1] - m[1][0]*m[0][1];
+    vector<vector<double> > w(2,vector<double>(2,0.0));
+    w[0][0] = m[1][1]/det;
+    w[0][1] = -m[0][1]/det;
+    w[1][0] = -m[1][0]/det;
+    w[1][1] = m[0][0]/det;
+    return w;
+}
+
+vector<vector<double> > vectneg(vector<vector<double> > m)
+{
+    vector<vector<double> > res(m.size(),vector<double>(m[0].size(),0.0));
+    for (unsigned int i=0;i<m.size();i++){
+        for (unsigned int j=0;j<m[0].size();j++){
+            res[i][j] = -m[i][j];
+        }
+    }
+    return res;
+}
+
+vector<double> vectneg(vector<double> &m)
+{
+    vector<double> res(m.size(),0.0);
+    for (unsigned int i=0;i<m.size();i++){
+            res[i] = -m[i];
+    }
+    return res;
+}
+
+vector<double> midPoint(vector<double> &a, vector<double> &b)
+{
+    // Vector addition and scaling, c=a+sf*b
+    vector<double> m(a.size());
+    for (unsigned int i=0; i<a.size(); i++)
+        m[i] = 0.5*a[i] + 0.5*b[i];
+    return m;
+}
+
+double angleOfVecs(vector<double> &a, vector<double> &b)
+{
+    double PI = atan(1)*4;
+    double angle = acos(dotProduct(a,b)/(vectNorm(a)*vectNorm(b)))/PI*180;
+    return angle;
+} 
+// Ning's code ends here ------------------------------------------------------
+
+//-------------------Changed by Xiangbei's code start here
+vector<Intersection>  cOctree::ProjectPoints(cOctNode &node, vector<vector<double> > projpoints, vector<vector<double> > projdirts)
+{
+    unsigned int i, j;
+    vector<vector<double> > vertlist = vertexCoords3D;
+    vector<int> projlist;
+    vector<vector<int> > trilist = polyConnectivity;
+    vector<Intersection> proj;
+
+    if (projdirts.size()==0){
+        proj = findmindists(node,projpoints);
+        cout<<"findmindists(node,projpoints);"<<'\n';
+    }else{
+        //cout<<"Starttttttt "<<'\n';
+        // // cout<<projdirts[index-1][0]<<" "<<projdirts[index-1][1]<<" "<<projdirts[index-1][2]<<'\n';
+        // // cout<<projpoints[index-2][0]<<" "<<projpoints[index-2][1]<<" "<<projpoints[index-2][2]<<'\n';
+        // // cout<<projdirts[index-2][0]<<" "<<projdirts[index-2][1]<<" "<<projdirts[index-2][2]<<'\n';
+        vector<cLine> raylist;
+        for (i=0;i<projdirts.size();i++){
+            //cout<<projpoints[i][0]<<" "<<projpoints[i][1]<<" "<<projpoints[i][2]<<'\n';
+            //cout<<projdirts[i][0]<<" "<<projdirts[i][1]<<" "<<projdirts[i][2]<<'\n';
+            cLine ray(projpoints[i],projdirts[i],0);
+            raylist.push_back(ray);
+        } 
+        proj = findRayIntersects(raylist);
+
+    }
+    // 
+    // // cout<<"update trilist"<<'\n';
+    // // cout<<"proj"<<'\n';
+    
+    // cout<<proj[-2].p<<'\n';
+    // cout<<proj[-3].p<<'\n';
+    // cout<<proj[1].triLabel<<' ';
+    // cout<<proj[2].triLabel<<'\n';
+    //cout<<"projpoints.size()"<<'\n';
+    //cout<<projpoints.size()<<'\n';    
+    return proj;
+}
+
+Reconnection cOctree::ProjectandReconnect(cOctNode &node, vector<vector<double> > projpoints, vector<vector<double> > projdirts)
+{
+    //cout<<"ProjectandReconnect4"<<'\n';
+    unsigned int i, j;
+    vector<vector<double> > vertlist = vertexCoords3D;
+    vector<int> projlist;
+    vector<vector<int> > trilist = polyConnectivity;
+    vector<Intersection> proj;
+    if (projdirts.size()==0){
+        proj = findmindists(node,projpoints);
+        cout<<"findmindists(node,projpoints);"<<'\n';
+    }else{
+        vector<cLine> raylist;
+        for (i=0;i<projdirts.size();i++){
+            cLine ray(projpoints[i],projdirts[i],0);
+            raylist.push_back(ray);
+        }
+        proj = findRayIntersects(raylist); 
+    }
+    #pragma omp parallel for
+    for (i=0;i<projpoints.size()-1;i++){
+        unsigned int tri0 = proj[i].triLabel;
+        unsigned int tri1 = proj[i+1].triLabel;
+        vector<double> p0 = proj[i].p;
+        vector<double> p1 = proj[i+1].p;
+        unsigned int count = 0;
+        vector<int> tri = trilist[tri0];
+        unsigned int tri1_0 = trilist[tri1][0];
+        unsigned int tri1_1 = trilist[tri1][1];
+        unsigned int tri1_2 = trilist[tri1][2];
+        vector<int> sharededge;
+  
+        if (tri0 == tri1){
+            ;          
+        }else{     
+            if (std::find(tri.begin(), tri.end(), tri1_0) != tri.end()){
+                count = count + 1;
+                sharededge.push_back(tri1_0);
+            }
+            if (std::find(tri.begin(), tri.end(), tri1_1) != tri.end()){
+                count = count + 1;
+                sharededge.push_back(tri1_1);
+            }
+            if (std::find(tri.begin(), tri.end(), tri1_2) != tri.end()){
+                count = count + 1;
+                sharededge.push_back(tri1_2);
+            }
+            if (count == 1){
+                double distance = 10000.;
+                unsigned int k = trilist[tri0][0];
+                for (j=0;j<3;j++){ 
+                    if (distance > distBetweenPoints(vertlist[trilist[tri0][j]],p0)){
+                        distance = distBetweenPoints(vertlist[trilist[tri0][j]],p0);
+                        k = trilist[tri0][j];
+                    }
+                } 
+                if (std::find(projlist.begin(), projlist.end(), k) != projlist.end()){
+                    ;
+                }else{
+                    vertlist[k] = p0;
+                    projlist.push_back(k);   
+                }            
+            }else if (count == 2){
+                double distance = distBetweenPoints(vertlist[sharededge[0]],p0);
+                unsigned int k = sharededge[0];
+                if (distance > distBetweenPoints(vertlist[sharededge[1]],p0)){                    
+                    k = sharededge[1];
+                }
+                if (std::find(projlist.begin(), projlist.end(), k) != projlist.end()){
+                    ;
+                }else{
+                    vertlist[k] = p0;
+                    projlist.push_back(k);   
+                } 
+            }else{//TODO: Automatically reproject
+               cout<<"Need to reproject more tightly distributed: "<<i<<" count: "<<count<<'\n'; 
+               cout<<"Or check if the projection outside the geometry"<<tri0<<" tri1: "<<tri1<<'\n';
+            }
+        }
+        if (i == 0 && count != 1 && count != 2){
+            double distance = 10000.;
+            unsigned int k = trilist[tri0][0]; 
+            for (j=0;j<3;j++){ 
+                if (distance > distBetweenPoints(vertlist[trilist[tri0][j]],p0)){
+                    distance = distBetweenPoints(vertlist[trilist[tri0][j]],p0);
+                    k = trilist[tri0][j];
+                }
+            } 
+            vertlist[k] = p0;
+            projlist.push_back(k); 
+        }
+        if (i == projpoints.size()-2){//cout<<"(i == projpoints.size()-1 I: "<<i<<'\n'; 
+            double distance = 10000.;
+            unsigned int k = trilist[tri1][0];
+            for (j=0;j<3;j++){ 
+                if (distance > distBetweenPoints(vertlist[trilist[tri1][j]],p1)){
+                    distance = distBetweenPoints(vertlist[trilist[tri1][j]],p1);
+                    k = trilist[tri1][j];
+                }
+            } 
+            vertlist[k] = p1;
+            projlist.push_back(k);               
+        }
+    }
+    //check if all three vertices in a triangle has been moved
+    for (i=0;i<projlist.size()-3;i++){
+        unsigned int v0 = projlist[i];
+        unsigned int v1 = projlist[i+1];
+        unsigned int v2 = projlist[i+2];
+        vector<int> check_trilist0;
+        vector<int> check_trilist1;
+        vector<int> check_trilist2;
+        unsigned int m, n;
+        //cout << i <<" "<<trilist.size()<<"i \n";
+        for (m=0;m<trilist.size();m++){
+            //cout << m <<"m \n";
+            for (n=0;n<3;n++){ 
+                if (v0 == trilist[m][n]){
+                    check_trilist0.push_back(m);
+                }
+                if (v1 == trilist[m][n]){
+                    check_trilist1.push_back(m);
+                }
+                if (v2 == trilist[m][n]){
+                    check_trilist2.push_back(m);
+                }
+            }
+        }
+        sort(check_trilist0.begin(), check_trilist0.end());
+        sort(check_trilist1.begin(), check_trilist1.end());
+        vector<int> intersect_01(check_trilist0.size() + check_trilist1.size());
+        vector<int>::iterator it;
+        it = set_intersection(check_trilist0.begin(), check_trilist0.end(), check_trilist1.begin(), check_trilist1.end(), intersect_01.begin());       
+        intersect_01.resize(it-intersect_01.begin());
+        if (intersect_01.size() != 0){
+            sort(intersect_01.begin(), intersect_01.end());
+            sort(check_trilist2.begin(), check_trilist2.end());
+            vector<int> intersect_012(intersect_01.size() + check_trilist2.size());
+            vector<int>::iterator st;
+            st = set_intersection(intersect_01.begin(), intersect_01.end(), check_trilist2.begin(), check_trilist2.end(), intersect_012.begin());
+            intersect_012.resize(st-intersect_012.begin());
+            if (intersect_012.size()!= 0){
+                if (intersect_012.size()>1){
+                    cout <<"WARNING: intersect_012.size()>1"<<'\n';
+                }
+                for (m=0;m<intersect_012.size();m++){
+                    //cout <<i<<" Common tri splitting: "<<intersect_012[m]<< '\n';
+                    vector<double> v01 = vectSubtract(vertlist[v0],vertlist[v1]);
+                    vector<double> v02 = vectSubtract(vertlist[v0],vertlist[v2]);
+                    vector<double> v10 = vectSubtract(vertlist[v1],vertlist[v0]);
+                    vector<double> v12 = vectSubtract(vertlist[v1],vertlist[v2]);
+                    vector<double> v20 = vectSubtract(vertlist[v2],vertlist[v0]);
+                    vector<double> v21 = vectSubtract(vertlist[v2],vertlist[v1]);
+                    if(dotProduct(v01,v02)<0){//
+                        sort(check_trilist1.begin(), check_trilist1.end());
+                        sort(check_trilist2.begin(), check_trilist2.end());
+                        vector<int> intersect_12(check_trilist1.size() + check_trilist2.size());
+                        vector<int>::iterator it;
+                        it = set_intersection(check_trilist1.begin(), check_trilist1.end(), check_trilist2.begin(), check_trilist2.end(), intersect_12.begin());       
+                        intersect_12.resize(it-intersect_12.begin());
+                        if (intersect_12.size()>2){
+                            cout <<"WARNING: intersect_12.size()>2"<<'\n';
+                        }
+                        int vvv;
+                        for (n=0;n<intersect_12.size();n++){
+                            if (intersect_12[n]!=intersect_012[m]){
+                                unsigned int ttt;
+                                for (ttt=0;ttt<3;ttt++){
+                                    if (v1!= trilist[intersect_12[n]][ttt] && v2!= trilist[intersect_12[n]][ttt]){
+                                        vvv = trilist[intersect_12[n]][ttt];
+                                        //cout <<"vvv intersect_12 "<<vvv<<'\n';
+                                    }
+                                }
+                            }
+                        }
+                        int tri1list[] = {vvv,v1,v0}; vector<int> tri1(tri1list, tri1list + sizeof(tri1list) / sizeof(int) );
+                        int tri2list[] = {vvv,v2,v0}; vector<int> tri2(tri2list, tri2list + sizeof(tri2list) / sizeof(int) );
+                        trilist.push_back(tri1);trilist.push_back(tri2);
+                    }else if(dotProduct(v10,v12)){
+                        sort(check_trilist0.begin(), check_trilist0.end());
+                        sort(check_trilist2.begin(), check_trilist2.end());
+                        vector<int> intersect_02(check_trilist0.size() + check_trilist2.size());
+                        vector<int>::iterator it;
+                        it = set_intersection(check_trilist0.begin(), check_trilist0.end(), check_trilist2.begin(), check_trilist2.end(), intersect_02.begin());       
+                        intersect_02.resize(it-intersect_02.begin());
+                        if (intersect_02.size()>2){
+                            cout <<"WARNING: intersect_02.size()>2"<<'\n';
+                        }
+                        int vvv;
+                        for (n=0;n<intersect_02.size();n++){
+                            if (intersect_02[n]!=intersect_012[m]){
+                                unsigned int ttt;
+                                for (ttt=0;ttt<3;ttt++){
+                                    if (v0!= trilist[intersect_02[n]][ttt] && v2!= trilist[intersect_02[n]][ttt]){
+                                        vvv = trilist[intersect_02[n]][ttt];
+                                        //cout <<"vvv intersect_02 "<<vvv<<'\n';
+                                    }
+                                }
+                            }
+                        }
+                        int tri1list[] = {vvv,v1,v1}; vector<int> tri1(tri1list, tri1list + sizeof(tri1list) / sizeof(int) );
+                        int tri2list[] = {vvv,v2,v1}; vector<int> tri2(tri2list, tri2list + sizeof(tri2list) / sizeof(int) );
+                        trilist.push_back(tri1);trilist.push_back(tri2);
+                    }else if(dotProduct(v20,v21)){
+                        if (intersect_01.size()>2){
+                            cout <<"WARNING: intersect_01.size()>2"<<'\n';
+                        }
+                        int vvv;
+                        for (n=0;n<intersect_01.size();n++){
+                            if (intersect_01[n]!=intersect_012[m]){
+                                unsigned int ttt;
+                                for (ttt=0;ttt<3;ttt++){
+                                    if (v0!= trilist[intersect_01[n]][ttt] && v1!= trilist[intersect_01[n]][ttt]){
+                                        vvv = trilist[intersect_01[n]][ttt];
+                                        //cout <<"vvv intersect_01 "<<vvv<<'\n';
+                                    }
+                                }
+                            }
+                        }
+
+                        int tri1list[] = {vvv,v0,v2}; vector<int> tri1(tri1list, tri1list + sizeof(tri1list) / sizeof(int) );
+                        int tri2list[] = {vvv,v1,v2}; vector<int> tri2(tri2list, tri2list + sizeof(tri2list) / sizeof(int) );
+                        trilist.push_back(tri1);trilist.push_back(tri2);
+                    }else{
+                        cout <<"WARNING: dotProduct"<<'\n';
+                    }
+                    trilist.erase(trilist.begin()+intersect_012[m]);
+                }
+            }
+        }
+    }
+    Reconnection reconnection(vertlist,trilist,projlist);
+    return reconnection;
+}
+
+//-------------------Changed by Xiangbei's code end here
+
+// ------------------------------------------------------
+double dotProduct(vector<double> &v1, vector<double> &v2)
+{
+    // Calculates dot product v1.v2
+    double dp=0.0;
+    for (unsigned int i=0; i<v1.size(); i++)
+        dp += v1[i]*v2[i]; 
+    return dp;
+}
+
+double distBetweenPoints(vector<double> &p1, vector<double> &p2)
+{
+    // Calculate the distance between points p1 and p2, |p1-p2|
+    double sum=0.0;
+    for (unsigned int i=0; i<3; i++)
+        sum += pow((p1[i]-p2[i]),2.0);
+    sum = sqrt(sum);
+    return sum;
+}
+
+vector<double> crossProduct(vector<double> &v1, vector<double> &v2)
+{
+    // Calculates cross product v1xv2
+    vector<double> cp(3);
+    cp[0] = v1[1]*v2[2] - v1[2]*v2[1];
+    cp[1] = v1[2]*v2[0] - v1[0]*v2[2];
+    cp[2] = v1[0]*v2[1] - v1[1]*v2[0];
+    return cp;
+}
+
+vector<double> vectAdd( vector<double> &a, vector<double> &b )
+{
+    // Vector addition, c=a+b
+    return vectAdd(a, b, 1.0);
+}
+
+vector<double> vectAdd( vector<double> &a, vector<double> &b, double sf )
+{
+    // Vector addition and scaling, c=a+sf*b
+    vector<double> c(a.size());
+    for (unsigned int i=0; i<a.size(); i++)
+        c[i] = a[i] + sf*b[i];
+    return c;
+}
+vector<double> vectSubtract( vector<double> &a, vector<double> &b )
+{
+    // Vector subtraction, c=a-b
+    vector<double> c(a.size());
+    for (unsigned int i=0; i<a.size(); i++)
+        c[i] = a[i]-b[i];
+    return c;
+}
+
+string NumberToString( int Number )
+{
+    // Converts integer to string
+    ostringstream ss;
+    ss << Number;
+    return ss.str();
+}
+
+bool sortNodes(const pair<cOctNode*,double>&i, const pair<cOctNode*,double>&j)
+{
+    // Function used to sort a vector of cOctnode,double pairs by the value of
+    // the double. The double will typically represent distance from the ray
+    // origin in a ray-node intersection test
+    return i.second < j.second;
+}
+
+// ------------------------------------------------------
+
 // // retriangulation
 // Reconnection cOctree::reconnect(cOctNode &node, vector<vector<double> > projpoints, vector<vector<double> > projdirts)
 // {
@@ -2016,543 +2553,3 @@ Reconnection cOctree::reconnect(cOctNode &node, vector<vector<double> > projpoin
 //     Reconnection reconnection(vertlist,trilist,projlist);
 //     return reconnection;
 // }
-
-//----------------------------------------------------------------------------------------------------
-vector<Intersection> cOctree::findRayIntersects(vector<cLine> &rayList)
-{
-    // For each ray provided, determines if ray hits a poly in the tree and 
-    // returns a boolean integer. Uses openmp to speed up the calculation
-    // Function findRayIntersectsSorted is a similar function that sorts the
-    // triangles in order of closest octNodes. For ray casting, this alternative
-    // function should be faster in most cases
-    
-    int numRays = (int)(rayList.size());
-    vector<Intersection> intersections;
-    #pragma omp parallel for
-    
-    // cout<<"findRayIntersects(raylist)2"<<'\n';  
-    // cLine ray2 = rayList[numRays-2];
-    // vector<double> p0_2 = ray2.p0;
-    // cout <<p0_2[0]<<" "<<p0_2[1]<<" "<<p0_2[2]<<'\n';
-
-    for (int i=0; i<numRays; i++) 
-    {
-        cLine *ray = &rayList[i]; 
-        //set<int> polyListCheck = getListPolysToCheck(*ray);
-        vector<Intersection> intersection = findRayIntersect(*ray);
-        intersections.push_back(intersection[0]);
-    }
-    return intersections;
-}
-
-vector<Intersection> cOctree::findRayIntersect(cLine &ray)
-{  
-    // Get polys to check
-    set<int> polyListCheck = getListPolysToCheck(ray);
-    
-    // Loop through all polys in check list to find a possible intersection
-    vector<Intersection> intersectList;
-    set<int>::iterator it;
-    vector<double> ip;
-    double s;
-    for (it=polyListCheck.begin(); it!=polyListCheck.end(); ++it) {
-        int polyLabel = *it;
-        if (polyList[polyLabel].rayPlaneIntersectPoint(ray,ip,s)) {
-            intersectList.push_back(Intersection(polyLabel,ip,s)); } 
-    }
-            // // cout<<projpoints[index-1][0]<<" "<<projpoints[index-1][1]<<" "<<projpoints[index-1][2]<<'\n';
-        // // cout<<projdirts[index-1][0]<<" "<<projdirts[index-1][1]<<" "<<projdirts[index-1][2]<<'\n';
-        // // cout<<projpoints[index-2][0]<<" "<<projpoints[index-2][1]<<" "<<projpoints[index-2][2]<<'\n';
-        // // cout<<projdirts[index-2][0]<<" "<<projdirts[index-2][1]<<" "<<projdirts[index-2][2]<<'\n';
-    if (intersectList.size()>0){
-        // Sort list in terms of distance of the intersection from the ray origin
-        sort(intersectList.begin(),intersectList.end());
-        vector<Intersection> minintersect;
-        // minintersect[0]=intersectList[0];
-        minintersect.assign(intersectList.begin(),intersectList.begin()+1);
-        // return intersectList;
-        return minintersect;
-    }else{
-        Intersection mini;
-        mini=findRaymindist(ray);
-        vector<Intersection> minintersect;
-        minintersect.push_back(mini);
-        return minintersect;
-    }
-}
-
-Intersection cOctree::findRaymindist(cLine &ray)
-{
-    // double distance = 1e99;
-    double distanceij = 1e99;
-    double area2;
-    double h;
-    vector<double> x1, x2, x0, x0x1, x0x2, x2x1, cross, PP;
-    int k;
-    for (unsigned int i=0;i!=polyList.size();i++){
-        for (unsigned int j=0;j<3;j++){
-            x1.assign(ray.p0.begin(),ray.p0.end());
-            x2.assign(ray.p1.begin(),ray.p1.end());
-            x0.assign(polyList[i].vertices[j].begin(),polyList[i].vertices[j].end());
-            x0x1=vectSubtract(x0,x1);
-            x0x2=vectSubtract(x0,x2);
-            cross=crossProduct(x0x1,x0x2);
-            area2=sqrt(dotProduct(cross,cross));
-            x2x1=vectSubtract(x2,x1);
-            h=area2/sqrt(dotProduct(x2x1,x2x1));
-            if (distanceij>h){
-                PP.assign(x0.begin(),x0.end());
-                distanceij=h;    
-                k=i;
-            }
-        }
-    }
-    Intersection intersect(k,PP,distanceij);
-    return intersect;
-}
-
-
-
-
-
-// ------------------------------------------------------
-double vectNorm(vector<double> &a)
-{
-    double norm = sqrt(dotProduct(a,a));
-    return norm;
-}
-
-vector<double> normalize(vector<double> &v)
-{   double sum=0.0;
-    for (unsigned int i=0;i<3;i++){
-        sum+=v[i]*v[i];
-    }
-    sum=sqrt(sum);
-    vector<double> norm(3);
-    for (unsigned int i=0;i<3;i++){
-        norm[i]=v[i]/sum;
-    }
-    return norm;
-}
-
-vector<double> vectMuldou( vector<double> &a, double sf)
-{
-    vector<double> c(a.size());
-    for (unsigned int i=0; i<a.size(); i++)
-        c[i] = a[i]*sf;
-    return c;
-}
-
-
-vector<vector<double> > vectMultiply(vector<vector<double> > m1, vector<vector<double> > m2)
-{
-    vector<vector<double> > res(m1.size(),vector<double>(m2[0].size(),0.0));
-    for (unsigned int i=0;i<m1.size();i++){
-        for (unsigned int j=0;j<m2[0].size();j++){
-            for (unsigned int k=0;k<m2.size();k++){
-                res[i][j] += m1[i][k]*m2[k][j];
-            }
-        }
-    }
-    return res;
-}
-
-vector<vector<double> > vectInverse(vector<vector<double> > &m)
-{
-    double det = m[0][0]*m[1][1] - m[1][0]*m[0][1];
-    vector<vector<double> > w(2,vector<double>(2,0.0));
-    w[0][0] = m[1][1]/det;
-    w[0][1] = -m[0][1]/det;
-    w[1][0] = -m[1][0]/det;
-    w[1][1] = m[0][0]/det;
-    return w;
-}
-
-vector<vector<double> > vectneg(vector<vector<double> > m)
-{
-    vector<vector<double> > res(m.size(),vector<double>(m[0].size(),0.0));
-    for (unsigned int i=0;i<m.size();i++){
-        for (unsigned int j=0;j<m[0].size();j++){
-            res[i][j] = -m[i][j];
-        }
-    }
-    return res;
-}
-
-vector<double> vectneg(vector<double> &m)
-{
-    vector<double> res(m.size(),0.0);
-    for (unsigned int i=0;i<m.size();i++){
-            res[i] = -m[i];
-    }
-    return res;
-}
-
-vector<double> midPoint(vector<double> &a, vector<double> &b)
-{
-    // Vector addition and scaling, c=a+sf*b
-    vector<double> m(a.size());
-    for (unsigned int i=0; i<a.size(); i++)
-        m[i] = 0.5*a[i] + 0.5*b[i];
-    return m;
-}
-
-double angleOfVecs(vector<double> &a, vector<double> &b)
-{
-    double PI = atan(1)*4;
-    double angle = acos(dotProduct(a,b)/(vectNorm(a)*vectNorm(b)))/PI*180;
-    return angle;
-} 
-// Ning's code ends here ------------------------------------------------------
-
-//-------------------Changed by Xiangbei's code start here
-vector<Intersection>  cOctree::ProjectPoints(cOctNode &node, vector<vector<double> > projpoints, vector<vector<double> > projdirts)
-{
-    unsigned int i, j;
-    vector<vector<double> > vertlist = vertexCoords3D;
-    vector<int> projlist;
-    vector<vector<int> > trilist = polyConnectivity;
-    vector<Intersection> proj;
-
-    if (projdirts.size()==0){
-        proj = findmindists(node,projpoints);
-        cout<<"findmindists(node,projpoints);"<<'\n';
-    }else{
-        cout<<"Starttttttt "<<'\n';
-        // // cout<<projdirts[index-1][0]<<" "<<projdirts[index-1][1]<<" "<<projdirts[index-1][2]<<'\n';
-        // // cout<<projpoints[index-2][0]<<" "<<projpoints[index-2][1]<<" "<<projpoints[index-2][2]<<'\n';
-        // // cout<<projdirts[index-2][0]<<" "<<projdirts[index-2][1]<<" "<<projdirts[index-2][2]<<'\n';
-        // // 49 33 5/-
-        // // 49 33 4/-
-        // // 48.9112 32.8645 5/-
-        // // 48.9112 32.8645 4/-
-        vector<cLine> raylist;
-        for (i=0;i<projdirts.size();i++){
-            cout<<projpoints[i][0]<<" "<<projpoints[i][1]<<" "<<projpoints[i][2]<<'\n';
-            cout<<projdirts[i][0]<<" "<<projdirts[i][1]<<" "<<projdirts[i][2]<<'\n';
-            cLine ray(projpoints[i],projdirts[i],0);
-            raylist.push_back(ray);
-        } 
-        proj = findRayIntersects(raylist);
-
-    }
-    // 
-    // // cout<<"update trilist"<<'\n';
-    // // cout<<"proj"<<'\n';
-    
-    // cout<<proj[-2].p<<'\n';
-    // cout<<proj[-3].p<<'\n';
-    // cout<<proj[1].triLabel<<' ';
-    // cout<<proj[2].triLabel<<'\n';
-    //cout<<"projpoints.size()"<<'\n';
-    //cout<<projpoints.size()<<'\n';    
-    return proj;
-}
-
-Reconnection cOctree::ProjectandReconnect(cOctNode &node, vector<vector<double> > projpoints, vector<vector<double> > projdirts)
-{
-    //cout<<"ProjectandReconnect4"<<'\n';
-    unsigned int i, j;
-    vector<vector<double> > vertlist = vertexCoords3D;
-    vector<int> projlist;
-    vector<vector<int> > trilist = polyConnectivity;
-    vector<Intersection> proj;
-    if (projdirts.size()==0){
-        proj = findmindists(node,projpoints);
-        cout<<"findmindists(node,projpoints);"<<'\n';
-    }else{
-        vector<cLine> raylist;
-        for (i=0;i<projdirts.size();i++){
-            cLine ray(projpoints[i],projdirts[i],0);
-            raylist.push_back(ray);
-        }
-        proj = findRayIntersects(raylist); 
-    }
-    #pragma omp parallel for
-    for (i=0;i<projpoints.size()-1;i++){
-        unsigned int tri0 = proj[i].triLabel;
-        unsigned int tri1 = proj[i+1].triLabel;
-        vector<double> p0 = proj[i].p;
-        vector<double> p1 = proj[i+1].p;
-        unsigned int count = 0;
-        vector<int> tri = trilist[tri0];
-        unsigned int tri1_0 = trilist[tri1][0];
-        unsigned int tri1_1 = trilist[tri1][1];
-        unsigned int tri1_2 = trilist[tri1][2];
-        vector<int> sharededge;
-  
-        if (tri0 == tri1){
-            ;          
-        }else{     
-            if (std::find(tri.begin(), tri.end(), tri1_0) != tri.end()){
-                count = count + 1;
-                sharededge.push_back(tri1_0);
-            }
-            if (std::find(tri.begin(), tri.end(), tri1_1) != tri.end()){
-                count = count + 1;
-                sharededge.push_back(tri1_1);
-            }
-            if (std::find(tri.begin(), tri.end(), tri1_2) != tri.end()){
-                count = count + 1;
-                sharededge.push_back(tri1_2);
-            }
-            if (count == 1){
-                double distance = 10000.;
-                unsigned int k = trilist[tri0][0];
-                for (j=0;j<3;j++){ 
-                    if (distance > distBetweenPoints(vertlist[trilist[tri0][j]],p0)){
-                        distance = distBetweenPoints(vertlist[trilist[tri0][j]],p0);
-                        k = trilist[tri0][j];
-                    }
-                } 
-                if (std::find(projlist.begin(), projlist.end(), k) != projlist.end()){
-                    ;
-                }else{
-                    vertlist[k] = p0;
-                    projlist.push_back(k);   
-                }            
-            }else if (count == 2){
-                double distance = distBetweenPoints(vertlist[sharededge[0]],p0);
-                unsigned int k = sharededge[0];
-                if (distance > distBetweenPoints(vertlist[sharededge[1]],p0)){                    
-                    k = sharededge[1];
-                }
-                if (std::find(projlist.begin(), projlist.end(), k) != projlist.end()){
-                    ;
-                }else{
-                    vertlist[k] = p0;
-                    projlist.push_back(k);   
-                } 
-            }else{//TODO: Automatically reproject
-               cout<<"Need to reproject more tightly distributed: "<<i<<" count: "<<count<<'\n'; 
-               cout<<"Or check if the projection outside the geometry"<<tri0<<" tri1: "<<tri1<<'\n';
-            }
-        }
-        if (i == 0 && count != 1 && count != 2){
-            double distance = 10000.;
-            unsigned int k = trilist[tri0][0]; 
-            for (j=0;j<3;j++){ 
-                if (distance > distBetweenPoints(vertlist[trilist[tri0][j]],p0)){
-                    distance = distBetweenPoints(vertlist[trilist[tri0][j]],p0);
-                    k = trilist[tri0][j];
-                }
-            } 
-            vertlist[k] = p0;
-            projlist.push_back(k); 
-        }
-        if (i == projpoints.size()-2){//cout<<"(i == projpoints.size()-1 I: "<<i<<'\n'; 
-            double distance = 10000.;
-            unsigned int k = trilist[tri1][0];
-            for (j=0;j<3;j++){ 
-                if (distance > distBetweenPoints(vertlist[trilist[tri1][j]],p1)){
-                    distance = distBetweenPoints(vertlist[trilist[tri1][j]],p1);
-                    k = trilist[tri1][j];
-                }
-            } 
-            vertlist[k] = p1;
-            projlist.push_back(k);               
-        }
-    }
-    for (i=0;i<projlist.size()-3;i++){
-        unsigned int v0 = projlist[i];
-        unsigned int v1 = projlist[i+1];
-        unsigned int v2 = projlist[i+2];
-        vector<int> check_trilist0;
-        vector<int> check_trilist1;
-        vector<int> check_trilist2;
-        unsigned int m, n;
-        //cout << i <<" "<<trilist.size()<<"i \n";
-        for (m=0;m<trilist.size();m++){
-            //cout << m <<"m \n";
-            for (n=0;n<3;n++){ 
-                if (v0 == trilist[m][n]){
-                    check_trilist0.push_back(m);
-                }
-                if (v1 == trilist[m][n]){
-                    check_trilist1.push_back(m);
-                }
-                if (v2 == trilist[m][n]){
-                    check_trilist2.push_back(m);
-                }
-            }
-        }
-        sort(check_trilist0.begin(), check_trilist0.end());
-        sort(check_trilist1.begin(), check_trilist1.end());
-        vector<int> intersect_01(check_trilist0.size() + check_trilist1.size());
-        vector<int>::iterator it;
-        it = set_intersection(check_trilist0.begin(), check_trilist0.end(), check_trilist1.begin(), check_trilist1.end(), intersect_01.begin());       
-        intersect_01.resize(it-intersect_01.begin());
-        if (intersect_01.size() != 0){
-            sort(intersect_01.begin(), intersect_01.end());
-            sort(check_trilist2.begin(), check_trilist2.end());
-            vector<int> intersect_012(intersect_01.size() + check_trilist2.size());
-            vector<int>::iterator st;
-            st = set_intersection(intersect_01.begin(), intersect_01.end(), check_trilist2.begin(), check_trilist2.end(), intersect_012.begin());
-            intersect_012.resize(st-intersect_012.begin());
-            if (intersect_012.size()!= 0){
-                if (intersect_012.size()>1){
-                    cout <<"WARNING: intersect_012.size()>1"<<'\n';
-                }
-                for (m=0;m<intersect_012.size();m++){
-                    //cout <<i<<" Common tri splitting: "<<intersect_012[m]<< '\n';
-                    vector<double> v01 = vectSubtract(vertlist[v0],vertlist[v1]);
-                    vector<double> v02 = vectSubtract(vertlist[v0],vertlist[v2]);
-                    vector<double> v10 = vectSubtract(vertlist[v1],vertlist[v0]);
-                    vector<double> v12 = vectSubtract(vertlist[v1],vertlist[v2]);
-                    vector<double> v20 = vectSubtract(vertlist[v2],vertlist[v0]);
-                    vector<double> v21 = vectSubtract(vertlist[v2],vertlist[v1]);
-                    if(dotProduct(v01,v02)<0){//
-                        sort(check_trilist1.begin(), check_trilist1.end());
-                        sort(check_trilist2.begin(), check_trilist2.end());
-                        vector<int> intersect_12(check_trilist1.size() + check_trilist2.size());
-                        vector<int>::iterator it;
-                        it = set_intersection(check_trilist1.begin(), check_trilist1.end(), check_trilist2.begin(), check_trilist2.end(), intersect_12.begin());       
-                        intersect_12.resize(it-intersect_12.begin());
-                        if (intersect_12.size()>2){
-                            cout <<"WARNING: intersect_12.size()>2"<<'\n';
-                        }
-                        int vvv;
-                        for (n=0;n<intersect_12.size();n++){
-                            if (intersect_12[n]!=intersect_012[m]){
-                                unsigned int ttt;
-                                for (ttt=0;ttt<3;ttt++){
-                                    if (v1!= trilist[intersect_12[n]][ttt] && v2!= trilist[intersect_12[n]][ttt]){
-                                        vvv = trilist[intersect_12[n]][ttt];
-                                        //cout <<"vvv intersect_12 "<<vvv<<'\n';
-                                    }
-                                }
-                            }
-                        }
-                        int tri1list[] = {vvv,v1,v0}; vector<int> tri1(tri1list, tri1list + sizeof(tri1list) / sizeof(int) );
-                        int tri2list[] = {vvv,v2,v0}; vector<int> tri2(tri2list, tri2list + sizeof(tri2list) / sizeof(int) );
-                        trilist.push_back(tri1);trilist.push_back(tri2);
-                    }else if(dotProduct(v10,v12)){
-                        sort(check_trilist0.begin(), check_trilist0.end());
-                        sort(check_trilist2.begin(), check_trilist2.end());
-                        vector<int> intersect_02(check_trilist0.size() + check_trilist2.size());
-                        vector<int>::iterator it;
-                        it = set_intersection(check_trilist0.begin(), check_trilist0.end(), check_trilist2.begin(), check_trilist2.end(), intersect_02.begin());       
-                        intersect_02.resize(it-intersect_02.begin());
-                        if (intersect_02.size()>2){
-                            cout <<"WARNING: intersect_02.size()>2"<<'\n';
-                        }
-                        int vvv;
-                        for (n=0;n<intersect_02.size();n++){
-                            if (intersect_02[n]!=intersect_012[m]){
-                                unsigned int ttt;
-                                for (ttt=0;ttt<3;ttt++){
-                                    if (v0!= trilist[intersect_02[n]][ttt] && v2!= trilist[intersect_02[n]][ttt]){
-                                        vvv = trilist[intersect_02[n]][ttt];
-                                        //cout <<"vvv intersect_02 "<<vvv<<'\n';
-                                    }
-                                }
-                            }
-                        }
-                        int tri1list[] = {vvv,v1,v1}; vector<int> tri1(tri1list, tri1list + sizeof(tri1list) / sizeof(int) );
-                        int tri2list[] = {vvv,v2,v1}; vector<int> tri2(tri2list, tri2list + sizeof(tri2list) / sizeof(int) );
-                        trilist.push_back(tri1);trilist.push_back(tri2);
-                    }else if(dotProduct(v20,v21)){
-                        if (intersect_01.size()>2){
-                            cout <<"WARNING: intersect_01.size()>2"<<'\n';
-                        }
-                        int vvv;
-                        for (n=0;n<intersect_01.size();n++){
-                            if (intersect_01[n]!=intersect_012[m]){
-                                unsigned int ttt;
-                                for (ttt=0;ttt<3;ttt++){
-                                    if (v0!= trilist[intersect_01[n]][ttt] && v1!= trilist[intersect_01[n]][ttt]){
-                                        vvv = trilist[intersect_01[n]][ttt];
-                                        //cout <<"vvv intersect_01 "<<vvv<<'\n';
-                                    }
-                                }
-                            }
-                        }
-
-                        int tri1list[] = {vvv,v0,v2}; vector<int> tri1(tri1list, tri1list + sizeof(tri1list) / sizeof(int) );
-                        int tri2list[] = {vvv,v1,v2}; vector<int> tri2(tri2list, tri2list + sizeof(tri2list) / sizeof(int) );
-                        trilist.push_back(tri1);trilist.push_back(tri2);
-                    }else{
-                        cout <<"WARNING: dotProduct"<<'\n';
-                    }
-                    trilist.erase(trilist.begin()+intersect_012[m]);
-                }
-            }
-        }
-    }
-    Reconnection reconnection(vertlist,trilist,projlist);
-    return reconnection;
-}
-
-//-------------------Changed by Xiangbei's code end here
-
-// ------------------------------------------------------
-double dotProduct(vector<double> &v1, vector<double> &v2)
-{
-    // Calculates dot product v1.v2
-    double dp=0.0;
-    for (unsigned int i=0; i<v1.size(); i++)
-        dp += v1[i]*v2[i]; 
-    return dp;
-}
-
-double distBetweenPoints(vector<double> &p1, vector<double> &p2)
-{
-    // Calculate the distance between points p1 and p2, |p1-p2|
-    double sum=0.0;
-    for (unsigned int i=0; i<3; i++)
-        sum += pow((p1[i]-p2[i]),2.0);
-    sum = sqrt(sum);
-    return sum;
-}
-
-vector<double> crossProduct(vector<double> &v1, vector<double> &v2)
-{
-    // Calculates cross product v1xv2
-    vector<double> cp(3);
-    cp[0] = v1[1]*v2[2] - v1[2]*v2[1];
-    cp[1] = v1[2]*v2[0] - v1[0]*v2[2];
-    cp[2] = v1[0]*v2[1] - v1[1]*v2[0];
-    return cp;
-}
-
-vector<double> vectAdd( vector<double> &a, vector<double> &b )
-{
-    // Vector addition, c=a+b
-    return vectAdd(a, b, 1.0);
-}
-
-vector<double> vectAdd( vector<double> &a, vector<double> &b, double sf )
-{
-    // Vector addition and scaling, c=a+sf*b
-    vector<double> c(a.size());
-    for (unsigned int i=0; i<a.size(); i++)
-        c[i] = a[i] + sf*b[i];
-    return c;
-}
-vector<double> vectSubtract( vector<double> &a, vector<double> &b )
-{
-    // Vector subtraction, c=a-b
-    vector<double> c(a.size());
-    for (unsigned int i=0; i<a.size(); i++)
-        c[i] = a[i]-b[i];
-    return c;
-}
-
-string NumberToString( int Number )
-{
-    // Converts integer to string
-    ostringstream ss;
-    ss << Number;
-    return ss.str();
-}
-
-bool sortNodes(const pair<cOctNode*,double>&i, const pair<cOctNode*,double>&j)
-{
-    // Function used to sort a vector of cOctnode,double pairs by the value of
-    // the double. The double will typically represent distance from the ray
-    // origin in a ray-node intersection test
-    return i.second < j.second;
-}
-
-// ------------------------------------------------------
-
