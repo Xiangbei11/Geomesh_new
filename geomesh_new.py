@@ -1,7 +1,9 @@
 import numpy as np
+from sklearn.cluster import k_means
 import vtk
 import vedo
 from smt.sampling_methods import LHS
+import matplotlib.pyplot as plt
 
 import pymeshopt
 from pyoctree import pyoctree as ot
@@ -10,7 +12,7 @@ from member_new import Member
 from scipy import interpolate
 
 # from mpl_toolkits.mplot3d import Axes3D
-# import matplotlib.pyplot as plt
+# 
 
 # from options_dictionary import OptionsDictionary
 # from meshopt import meshopt
@@ -251,8 +253,97 @@ class Geomesh(object):
             l3 = np.linspace(l0[-1,:], l2[-1,:],num_v)
             print('l1',l1.shape)
             print('l3',l3.shape)
-            vertcoord = self.TFI(l0, l1, l2, l3, LHS_uv, plot = True)
+            self.ES(l0, l1, l2, l3, LHS_uv, plot = True)
+            vertcoord = 
+            print('vertcoord',vertcoord.shape)
+    def ES(self, l0, l1, l2, l3, uv, plot = False):
+        if plot:
+            fig, ax = plt.subplots()
+        N = uv.shape[0]
+        ndim = 2
+        masses = np.ones(N)
+        charges = np.ones((N,))#array([1, 1, 1, 1, 1]) * 2
+        print('charges',np.shape(charges))
+        loc_arr = self.TFI(l0, l1, l2, l3, uv, plot = False)
+        print('loc_arr',np.shape(loc_arr))
+        speed_arr = np.zeros((N, ndim))
+        charge_matrix = -1 * np.outer(charges, charges) # compute charge matrix, ie c1 * c2
+        print('charge_matrix',charge_matrix.shape)
+        time = np.linspace(0, 0.03)
+        dt = np.ediff1d(time).mean()
+        print('dt:',dt)#0.00061224
+        #print(np.ediff1d(time)) all 0.00061224 
 
+        np.seterr(invalid='ignore')
+        for i, t in enumerate(time):
+            # get (dx, dy) for every point
+            delta = (loc_arr.T[..., np.newaxis] - loc_arr.T[:, np.newaxis]).T
+            # calculate Euclidean distance
+            distances = np.linalg.norm(delta, axis=-1)
+            # and normalised unit vector
+            unit_vector = np.divide(delta.T, distances).T#(delta.T / distances).T
+            unit_vector[np.isnan(unit_vector)] = 0 # replace NaN values with 0
+            # calculate force
+            np.seterr(divide='ignore',invalid='ignore')
+            force = np.divide(charge_matrix, distances**2)#charge_matrix / distances**2 # norm gives length of delta vector
+            force[np.isinf(force)] = 0 # NaN forces are 0
+
+            # calculate acceleration in all dimensions
+            acc = (unit_vector.T * force / masses).T.sum(axis=1)
+            # v = a * dt
+            speed_arr += acc * dt
+
+            # increment position, xyz = v * dt
+            loc_arr += speed_arr * dt 
+            marker='.'
+            # plotting
+            if not i:
+                color = 'k'
+                zorder = 3
+                ms = 3
+                vedo_internal_pts1 = vedo.Points(loc_arr, r= 13, c=3,alpha = 0.5)
+                marker='.'
+                ax.plot(loc_arr[:,0], loc_arr[:,1], '*', color=color, ms=ms, zorder=zorder, label = 'Start')
+                # for i, pt in enumerate(loc_arr):
+                #     ax.text(*pt + 0.1, s='{}q {}m'.format(charges[i], masses[i]))
+            elif i == len(time)-1:
+                color = 'b'
+                zroder = 3
+                ms = 3
+                vedo_internal_pts2 = vedo.Points(loc_arr, r= 13, c=1)
+                marker='.'
+                loc_final = loc_arr
+                ax.plot(loc_arr[:,0], loc_arr[:,1], '^', color=color, ms=ms, zorder=zorder, label = 'End')
+            else:
+                color = 'r'
+                zorder = 1
+                ms = 1
+                marker='.'
+                ax.plot(loc_arr[:,0], loc_arr[:,1], '.', color=color, ms=ms, zorder=zorder)
+
+        ax.set_aspect('equal')
+        ax.set_title('Rutherford scattering')
+        plt.legend()
+
+        for i in range(2):
+            norm_constant =  max(loc_final[:,i]) - min(loc_final[:,i]) 
+            min_value = min(loc_final[:,i])
+            max_value = max(loc_final[:,i])
+            loc_final[:,i] = (0.9*(loc_final[:,i] - min_value))/ norm_constant + 0.05
+
+        vedo_internal_pts3 = vedo.Points(loc_final, r= 13, c=2)
+        plot2 = vedo.Plotter()
+        axes_opts = dict(
+            xtitle='u', # latex-style syntax
+            ytitle='v')
+        plot2.show('ES_uv',vedo_internal_pts3, ve_u0,  ve_v0, ve_u1, ve_v1, axes=axes_opts, interactive = False)
+
+        uv = loc_final
+        uv = np.concatenate((uv,u0))
+        uv = np.concatenate((uv,u1))
+        uv = np.concatenate((uv,v0))
+        uv = np.concatenate((uv,v1))
+        pass
     def LHS(self, num_u0, num_u1, num_v, plot = False):
 
         if num_u0 > num_u1:
@@ -294,31 +385,22 @@ class Geomesh(object):
         
         return uv
             
-    def TFI(self, l0, l1, l2, l3, uv, plot = False):
-        tck_l0, u_l0 = interpolate.splprep(l0.T, k = 2, s=0)
-        new_points = interpolate.splev(np.array([0.5,0.7]), tck_l0)
-        print('new_points',new_points)
-        tck_l2, u_l2 = interpolate.splprep(l2.T, k = 2, s=0)
-        tck_l1, u_l1 = interpolate.splprep(l1.T, k = 2, s=0)
-        tck_l3, u_l3 = interpolate.splprep(l3.T, k = 2, s=0)
+    def TFI(self, l0, l1, l2, l3, uv, k = 2, plot = False):
+        tck_l0, _ = interpolate.splprep([l0[:,0],l0[:,1],l0[:,2]], k = k, s=0)
+        tck_l2, _ = interpolate.splprep([l2[:,0],l2[:,1],l2[:,2]], k = k, s=0)
+        tck_l1, _ = interpolate.splprep([l1[:,0],l1[:,1],l1[:,2]], k = k, s=0)
+        tck_l3, _ = interpolate.splprep([l3[:,0],l3[:,1],l3[:,2]], k = k, s=0)
         u = uv[:,0]
         v = uv[:,1]
         point_01 = l0[0,:]
         point_23 = l2[-1,:]
         point_03 = l0[-1,:]
         point_21 = l2[0,:]
-        print(u.shape, point_01.shape)
-        # print(np.outer(u,point_01).shape)
-        print(((1-v)*np.array(interpolate.splev(u,tck_l0))[0,:]).shape)
-        print(((1-u)*(1-v)*point_01[0]).shape)
         vertcoord = np.zeros((uv.shape[0],3))
-        vertcoord[:,0] = (1-v)*np.array(interpolate.splev(u,tck_l0))[0,:] + v*np.array(interpolate.splev(u,tck_l2))[0,:] +(1-u)*np.array(interpolate.splev(v,tck_l1))[0,:] + u*np.array(interpolate.splev(v,tck_l3))[0,:]\
-            -((1-u)*(1-v)*point_01[0] + u*v*point_23[0] + u*(1-v)*point_03[0] + (1-u)*v*point_21[0])
-        vertcoord[:,1] = (1-v)*np.array(interpolate.splev(u,tck_l0))[1,:] + v*np.array(interpolate.splev(u,tck_l2))[1,:] +(1-u)*np.array(interpolate.splev(v,tck_l1))[1,:] + u*np.array(interpolate.splev(v,tck_l3))[1,:]\
-            -((1-u)*(1-v)*point_01[1] + u*v*point_23[1] + u*(1-v)*point_03[1] + (1-u)*v*point_21[1])
-        vertcoord[:,2] = (1-v)*np.array(interpolate.splev(u,tck_l0))[2,:] + v*np.array(interpolate.splev(u,tck_l2))[2,:] +(1-u)*np.array(interpolate.splev(v,tck_l1))[2,:] + u*np.array(interpolate.splev(v,tck_l3))[2,:]\
-            -((1-u)*(1-v)*point_01[2] + u*v*point_23[2] + u*(1-v)*point_03[2] + (1-u)*v*point_21[2])
-        print('vertcoord',vertcoord.shape)
+        for i in range(3):
+            vertcoord[:,i] = (1-v)*np.array(interpolate.splev(u,tck_l0))[i,:] + v*np.array(interpolate.splev(u,tck_l2))[i,:] +(1-u)*np.array(interpolate.splev(v,tck_l1))[i,:] + u*np.array(interpolate.splev(v,tck_l3))[i,:]\
+                -((1-u)*(1-v)*point_01[i] + u*v*point_23[i] + u*(1-v)*point_03[i] + (1-u)*v*point_21[i])
+
         if plot:   
             ve_l0 = vedo.Points(l0, r = 15, alpha = 0.5, c='black')
             ve_l1 = vedo.Points(l1, r = 15, alpha = 0.5, c='green')

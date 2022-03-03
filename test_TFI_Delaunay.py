@@ -4,28 +4,28 @@ import matplotlib.pyplot as plt
 import triangle as tr
 import vedo
 
-nu = 15
-nv = 14
-num_input = 2*(nu+nv)
-x = np.linspace(0,1,nu)
-y = np.linspace(0,1,nv)
-u, v = np.meshgrid(x, y, indexing='ij')
-segment_locations_all = np.stack((u,v), axis =2)
-linear_map_matrix = np.zeros((nu*nv, num_input))
-u = np.reshape(segment_locations_all[:,:,0],(nu*nv,1))
-v = np.reshape(segment_locations_all[:,:,1],(nu*nv,1))
-n = 0
-for i in range(nu):
-    for j in range(nv):
-        linear_map_matrix[n,i] = 1-v[n]
-        linear_map_matrix[n,i+nu] = v[n]
-        linear_map_matrix[n,j+2*nu] = 1-u[n]
-        linear_map_matrix[n,j+2*nu+nv] = u[n]
-        linear_map_matrix[n,0] = linear_map_matrix[n,0] - (1-u[n])*(1-v[n])
-        linear_map_matrix[n,2*nu-1] = linear_map_matrix[n,2*nu-1] - u[n]*v[n]
-        linear_map_matrix[n,nu-1] = linear_map_matrix[n,nu-1] - u[n]*(1-v[n])
-        linear_map_matrix[n,nu] = linear_map_matrix[n,nu] - v[n]*(1-u[n])
-        n = n+1
+# nu = 15
+# nv = 14
+# num_input = 2*(nu+nv)
+# x = np.linspace(0,1,nu)
+# y = np.linspace(0,1,nv)
+# u, v = np.meshgrid(x, y, indexing='ij')
+# segment_locations_all = np.stack((u,v), axis =2)
+# linear_map_matrix = np.zeros((nu*nv, num_input))
+# u = np.reshape(segment_locations_all[:,:,0],(nu*nv,1))
+# v = np.reshape(segment_locations_all[:,:,1],(nu*nv,1))
+# n = 0
+# for i in range(nu):
+#     for j in range(nv):
+#         linear_map_matrix[n,i] = 1-v[n]
+#         linear_map_matrix[n,i+nu] = v[n]
+#         linear_map_matrix[n,j+2*nu] = 1-u[n]
+#         linear_map_matrix[n,j+2*nu+nv] = u[n]
+#         linear_map_matrix[n,0] = linear_map_matrix[n,0] - (1-u[n])*(1-v[n])
+#         linear_map_matrix[n,2*nu-1] = linear_map_matrix[n,2*nu-1] - u[n]*v[n]
+#         linear_map_matrix[n,nu-1] = linear_map_matrix[n,nu-1] - u[n]*(1-v[n])
+#         linear_map_matrix[n,nu] = linear_map_matrix[n,nu] - v[n]*(1-u[n])
+#         n = n+1
 
 nu = 15
 nv = 14
@@ -38,6 +38,50 @@ lu0 = np.linspace(v0,v1,num=nuu)
 lu1 = np.linspace(v3,v2,num=nu)
 lv0 = np.linspace(v0,v3,num=nv)
 lv1 = np.linspace(v1,v2,num=nv)
+lu1[0:-3,2] = 3*np.sin(lu1[0:-3,2])
+lu0[1:-1,2] = 5*np.cos(lu0[1:-1,2])
+x = np.linspace(0,1,nu)
+y = np.linspace(0,1,nv)
+u, v = np.meshgrid(x, y, indexing='ij')
+u = u.flatten()
+v = v.flatten()
+
+tck_l0, u_l0 = interpolate.splprep([lu0[:,0],lu0[:,1],lu0[:,2]], k = 2, s=0)
+print(u_l0)
+new_points = interpolate.splev(np.array([0.5,0.7]), tck_l0)
+print(new_points)
+print(np.array(new_points)[0,:])
+tck_l2, u_l2 = interpolate.splprep([lu1[:,0],lu1[:,1],lu1[:,2]], k = 2, s=0)
+tck_l1, u_l1 = interpolate.splprep([lv0[:,0],lv0[:,1],lv0[:,2]], k = 2, s=0)
+tck_l3, u_l3 = interpolate.splprep([lv1[:,0],lv1[:,1],lv1[:,2]], k = 2, s=0)
+# u = uv[:,0]
+# v = uv[:,1]
+print(u.shape)
+point_01 = lu0[0,:]
+point_23 = lu1[-1,:]
+point_03 = lu0[-1,:]
+point_21 = lu1[0,:]
+print(u.shape, point_01.shape)
+# print(np.outer(u,point_01).shape)
+print('est')
+print((np.array(interpolate.splev(u,tck_l0))).shape)
+print(((1-u)*(1-v)*point_01[0]).shape)
+vertcoord = np.zeros((u.shape[0],3))
+for i in range(3):
+    vertcoord[:,i] = (1-v)*np.array(interpolate.splev(u,tck_l0))[i,:] + v*np.array(interpolate.splev(u,tck_l2))[i,:] +(1-u)*np.array(interpolate.splev(v,tck_l1))[i,:] + u*np.array(interpolate.splev(v,tck_l3))[i,:]\
+        -((1-u)*(1-v)*point_01[i] + u*v*point_23[i] + u*(1-v)*point_03[i] + (1-u)*v*point_21[i])
+print('vertcoord',vertcoord.shape)
+if True:   
+    ve_l0 = vedo.Points(lu0, r = 15, alpha = 0.5, c='black')
+    ve_l1 = vedo.Points(lv0, r = 15, alpha = 0.5, c='green')
+    ve_l2 = vedo.Points(lu1, r = 15, alpha = 0.5, c='yellow')
+    ve_l3 = vedo.Points(lv1, r = 15, alpha = 0.5, c='pink')
+    ve_internal_pts = vedo.Points(vertcoord, r = 10, c='red')
+    ve_new = vedo.Points(np.array(new_points).T, r = 20, alpha = 1, c='red')
+    plot = vedo.Plotter()
+    plot.show('Boundary',ve_internal_pts, ve_l0,  ve_l1, ve_l2, ve_l3, axes=1, interactive=True) #, ve_new
+exit()
+
 xx = lu1[:,0]
 yy = lu1[:,1]
 zz = np.sin(x)
