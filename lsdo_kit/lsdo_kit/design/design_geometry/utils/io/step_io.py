@@ -192,7 +192,9 @@ def read_gmsh_stp(geo, file_name):
         
         if np.sum(parsed_info_dict[f'surf{i}_u_multiplicities'][1:-1]) != len(parsed_info_dict[f'surf{i}_u_multiplicities'][1:-1]) \
             or np.sum(parsed_info_dict[f'surf{i}_v_multiplicities'][1:-1]) != len(parsed_info_dict[f'surf{i}_v_multiplicities'][1:-1])\
-            or np.any(cntrl_pts.shape[0] <= 8):
+            or np.any(cntrl_pts.shape[0] <= 8)\
+            or num_rows_of_cps < 3\
+            or num_cp_per_row < 3:
             if not filtered:
                 geo.remove_multiplicity(geo.input_bspline_entity_dict[parsed_info_dict[f'surf{i}_name']])
         #exit()
@@ -300,7 +302,7 @@ def read_openvsp_stp(geo, file_name):
                         info_index += 1
 
             parsed_info[0] = parsed_info[0][17:]+f', {i}'   # Hardcoded 17 to remove useless string
-            print(parsed_info[0])
+            #print(parsed_info[0])
             knots_u = np.array([parsed_info[10]])
             knots_u = np.repeat(knots_u, parsed_info[8])
             knots_u = knots_u/knots_u[-1]

@@ -26,7 +26,7 @@ from scipy import interpolate
 
 
 class Geomesh(object):
-    def __init__(self, path):
+    def __init__(self, path_of_file = None, lsdo_kit_design_geometry_class = None):
         ''' 
         ----------
         path : str
@@ -42,7 +42,7 @@ class Geomesh(object):
         projection_dir : list of all the projection directions        
         nonintlist : list (string) of all the name of the members between which the intersections are not expected (num,2) 
         '''
-        self.path = path
+        self.path = path_of_file
         self.members = []
         self.num_members = 0
         self.quadlist = np.empty((0,4), dtype=np.int32)
@@ -254,7 +254,7 @@ class Geomesh(object):
             print('l1',l1.shape)
             print('l3',l3.shape)
             self.ES(l0, l1, l2, l3, LHS_uv, plot = True)
-            vertcoord = 
+            #vertcoord = 
             print('vertcoord',vertcoord.shape)
     def ES(self, l0, l1, l2, l3, uv, plot = False):
         if plot:

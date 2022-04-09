@@ -10,7 +10,7 @@ import time
 import vedo
 
 # ---- Set path ----
-aircraft = Geomesh('CAD_new/Boeing_777-9x_9236_notwatertight.stl')
+aircraft = Geomesh(path_of_file = 'CAD_new/Boeing_777-9x_9236_notwatertight.stl')
 
 # ---- Define topology and octree ----
 aircraft.compute_topology(plot = False) 

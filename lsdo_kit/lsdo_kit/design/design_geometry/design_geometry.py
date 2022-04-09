@@ -78,17 +78,27 @@ class DesignGeometry:
         self.mesh_list = {}
         self.bspline_mesh_list = {}
         self.geometric_outputs = None
-        if plot == True:
-            vp_init = Plotter()#TODO legend
+        if plot == True: #There are only 239 colors in vedo.colors.colors dictionary. If number of bspline surfaces is larger than 239*2, reduce the index of the color agian
+            vps_ini = []
             vps = []
-            for surf, color in zip(self.input_bspline_entity_dict.values(), colors.colors.values()):
-                vps.append(Points(surf.control_points, r=8, c = color).legend(surf.name))
-            vp_init.show(vps, 'Surface points', axes=1, viewup="z", interactive = False)
-            vp_init_out = Plotter()#TODO legend
-            vps = []
-            for surf, color in zip(self.initial_input_bspline_entity_dict.values(), colors.colors.values()):
-                vps.append(Points(surf.control_points, r=8, c = color).legend(surf.name))
-            vp_init_out.show(vps, 'Control points', axes=1, viewup="z", interactive = False)
+            for i in range(len(self.input_bspline_entity_dict.values())):
+                if (i < 157 or i>180) and i:# 
+                    continue
+                if i > 238:
+                    color = list(colors.colors.values())[i-239]#239
+                else:
+                    color = list(colors.colors.values())[i]
+                print(i,color)
+                surf_ini = list(self.initial_input_bspline_entity_dict.values())[i]
+                vps_ini.append(Points(surf_ini.control_points, r=8, c = color))
+                surf = list(self.input_bspline_entity_dict.values())[i]
+                vps.append(Points(surf.control_points, r=8, c = color))
+            #print(i)
+            vp_init_out = Plotter()
+            vp_init_out.show(vps_ini, 'Initial control points', axes=1, viewup="z", interactive = False)
+            vp_init = Plotter()
+            vp_init.show(vps, 'Interpolated control points', axes=1, viewup="z", interactive = True)        
+
 
     def project_points(self, points_to_be_projected, projection_targets_names=[], projection_direction=np.array([0., 0., 0.]), offset=np.array([0., 0., 0.]), plot=False):
         if len(np.shape(points_to_be_projected))== 1:
